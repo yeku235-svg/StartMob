@@ -1,0 +1,54 @@
+name: android-build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config python3-jinja2 cmake
+
+      - name: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: Cache de vcpkg
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg
+          key: vcpkg-android-${{ hashFiles('source/vcpkg.json') }}
+
+      - name: Configurar
+        run: |
+          cmake -S source -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=arm64-android \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DBUILD_TESTING=OFF \
+            -DSTAR_ENABLE_STEAM_INTEGRATION=OFF \
+            -DSTAR_ENABLE_DISCORD_INTEGRATION=OFF \
+            -DSTAR_USE_JEMALLOC=OFF \
+            2>&1 | tee configure.log
+
+      - name: Compilar
+        run: cmake --build build 2>&1 | tee build.log
+
+      - name: Subir logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            configure.log
+            build.log
+            ~/vcpkg/buildtrees/**/*.log
